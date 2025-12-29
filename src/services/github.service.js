@@ -138,26 +138,36 @@ export class GitHubService {
    * Clone repository to local directory
    * @param {string} repoUrl - Repository URL
    * @param {string} destinationPath - Local destination path
+   * @param {string} customToken - Optional custom token (PAT) to use instead of OAuth token
    * @returns {Promise<string>} Destination path
    */
-  async cloneRepo(repoUrl, destinationPath) {
+  async cloneRepo(repoUrl, destinationPath, customToken = null) {
     try {
       // Ensure destination directory exists
       await fs.mkdir(destinationPath, { recursive: true });
 
+      // Use custom token if provided, otherwise fall back to OAuth token
+      const token = customToken || this.accessToken;
+
       // Insert access token into clone URL for private repos
-      const cloneUrl = this.accessToken
-        ? repoUrl.replace("https://", `https://${this.accessToken}@`)
+      const cloneUrl = token
+        ? repoUrl.replace("https://", `https://${token}@`)
         : repoUrl;
 
       // Clone repository
       const command = `git clone "${cloneUrl}" "${destinationPath}"`;
       await execAsync(command);
 
-      logger.info(`Cloned repository to: ${destinationPath}`);
+      logger.info(`Cloned repository to: ${destinationPath}${customToken ? ' (using custom PAT)' : ''}`);
       return destinationPath;
     } catch (error) {
       logger.error("Failed to clone repository:", error);
+
+      // Check if it's an authentication error
+      if (error.message.includes('Authentication failed') || error.message.includes('could not read Username')) {
+        throw new Error('GITHUB_AUTH_REQUIRED');
+      }
+
       throw new Error(`Failed to clone repository: ${error.message}`);
     }
   }

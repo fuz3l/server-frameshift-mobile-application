@@ -46,10 +46,27 @@ class ModelsConverter:
                 result = self._convert_file(model_file)
                 self.results['converted_files'].append(result)
                 self.results['total_models'] += result.get('models_count', 0)
+
+                # Add per-file conversion detail for frontend display
+                self.results['issues'].append({
+                    'file': str(model_file.relative_to(self.django_path)),
+                    'filename': model_file.name,
+                    'status': 'converted',
+                    'confidence': 95,  # High confidence for successful conversion
+                    'message': f'Successfully converted {result.get("models_count", 0)} model(s)',
+                    'description': 'Django models converted to Flask-SQLAlchemy',
+                    'category': 'models'
+                })
             except Exception as e:
                 logger.error(f"Failed to convert {model_file}: {e}", exc_info=True)
                 self.results['issues'].append({
-                    'file': str(model_file),
+                    'file': str(model_file.relative_to(self.django_path)),
+                    'filename': model_file.name,
+                    'status': 'failed',
+                    'confidence': 0,
+                    'message': f'Conversion failed: {str(e)}',
+                    'description': str(e),
+                    'category': 'models',
                     'error': str(e)
                 })
 

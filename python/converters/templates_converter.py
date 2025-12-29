@@ -37,10 +37,27 @@ class TemplatesConverter:
                 result = self._convert_file(template_file)
                 self.results['converted_files'].append(result)
                 self.results['total_templates'] += 1
+
+                # Add per-file conversion detail for frontend display
+                self.results['issues'].append({
+                    'file': str(template_file.relative_to(self.django_path)),
+                    'filename': template_file.name,
+                    'status': 'converted',
+                    'confidence': 80,  # Moderate confidence - templates may need manual review
+                    'message': 'Template converted to Jinja2',
+                    'description': 'Django template tags converted to Jinja2 syntax',
+                    'category': 'templates'
+                })
             except Exception as e:
                 logger.error(f"Failed to convert {template_file}: {e}")
                 self.results['issues'].append({
-                    'file': str(template_file),
+                    'file': str(template_file.relative_to(self.django_path)),
+                    'filename': template_file.name,
+                    'status': 'failed',
+                    'confidence': 0,
+                    'message': f'Conversion failed: {str(e)}',
+                    'description': str(e),
+                    'category': 'templates',
                     'error': str(e)
                 })
 

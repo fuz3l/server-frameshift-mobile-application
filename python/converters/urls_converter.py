@@ -37,10 +37,27 @@ class URLsConverter:
             try:
                 result = self._convert_file(url_file)
                 self.results['converted_files'].append(result)
+
+                # Add per-file conversion detail for frontend display
+                self.results['issues'].append({
+                    'file': str(url_file.relative_to(self.django_path)),
+                    'filename': url_file.name,
+                    'status': 'converted',
+                    'confidence': 85,  # Good confidence for URL conversion
+                    'message': f'URLs converted to Flask routes (output: routes.py)',
+                    'description': 'Django URL patterns converted to Flask blueprints',
+                    'category': 'urls'
+                })
             except Exception as e:
                 logger.error(f"Failed to convert {url_file}: {e}")
                 self.results['issues'].append({
-                    'file': str(url_file),
+                    'file': str(url_file.relative_to(self.django_path)),
+                    'filename': url_file.name,
+                    'status': 'failed',
+                    'confidence': 0,
+                    'message': f'Conversion failed: {str(e)}',
+                    'description': str(e),
+                    'category': 'urls',
                     'error': str(e)
                 })
 

@@ -107,15 +107,67 @@ export const getUserProjects = asyncHandler(async (req, res) => {
  */
 export const getUserConversions = asyncHandler(async (req, res) => {
   const { userId } = req.user;
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = parseInt(req.query.pageSize) || 10;
+  const status = req.query.status || null;
 
-  // TODO: Implement when conversion job model is created
-  // For now, return empty array
+  const offset = (page - 1) * pageSize;
+
+  // Get conversions with project details
+  const ConversionJobModel = (await import('../models/conversionJob.model.js')).default;
+  const ReportModel = (await import('../models/report.model.js')).default;
+
+  const jobs = await ConversionJobModel.findByUserId(userId, {
+    limit: pageSize,
+    offset,
+    status
+  });
+
+  const total = await ConversionJobModel.countByUserId(userId, status);
+
+  // Enrich with report data if available
+  const conversions = await Promise.all(
+    jobs.map(async (job) => {
+      let report = null;
+      if (job.status === 'completed') {
+        try {
+          report = await ReportModel.findByConversionJobId(job.id);
+        } catch (error) {
+          logger.error(`Failed to fetch report for job ${job.id}:`, error);
+        }
+      }
+
+      return {
+        id: job.id,
+        projectId: job.project_id,
+        status: job.status,
+        progress: job.progress_percentage,
+        currentStep: job.current_step,
+        error: job.error_message,
+        startedAt: job.started_at,
+        completedAt: job.completed_at,
+        createdAt: job.created_at,
+        report: report ? {
+          accuracyScore: report.accuracy_score,
+          totalFiles: report.total_files_converted,
+          modelsConverted: report.models_converted,
+          viewsConverted: report.views_converted,
+          urlsConverted: report.urls_converted
+        } : null
+      };
+    })
+  );
 
   res.json({
     success: true,
     data: {
-      conversions: [],
-      message: 'Conversion history will be available when conversion feature is implemented'
+      conversions,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize)
+      }
     }
   });
 });
@@ -129,16 +181,23 @@ export const getUserStats = asyncHandler(async (req, res) => {
 
   const totalProjects = await ProjectModel.countByUserId(userId);
 
-  // TODO: Add conversion statistics when conversion feature is implemented
+  // Get conversion statistics
+  const ConversionJobModel = (await import('../models/conversionJob.model.js')).default;
+
+  const totalConversions = await ConversionJobModel.countByUserId(userId);
+  const completedConversions = await ConversionJobModel.countByUserId(userId, 'completed');
+  const failedConversions = await ConversionJobModel.countByUserId(userId, 'failed');
+  const inProgressConversions = await ConversionJobModel.countByUserId(userId, 'processing');
 
   res.json({
     success: true,
     data: {
       stats: {
         totalProjects,
-        totalConversions: 0,
-        completedConversions: 0,
-        failedConversions: 0
+        totalConversions,
+        completedConversions,
+        failedConversions,
+        inProgressConversions
       }
     }
   });

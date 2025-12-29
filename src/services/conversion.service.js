@@ -8,6 +8,12 @@ import emailService from './email.service.js';
 import logger from '../utils/logger.js';
 
 /**
+ * Map to track active Python conversion processes
+ * Key: jobId, Value: ChildProcess
+ */
+const activeProcesses = new Map();
+
+/**
  * Conversion service - Node-Python bridge
  * Manages Python child processes for Django-to-Flask conversion
  */
@@ -125,6 +131,10 @@ export class ConversionService {
         cwd: process.cwd()
       });
 
+      // Store process in activeProcesses map for cancellation support
+      activeProcesses.set(jobId, pythonProcess);
+      logger.info(`Stored active process for job ${jobId} (PID: ${pythonProcess.pid})`);
+
       let result = null;
       let errorOutput = '';
       let isResolved = false;
@@ -166,6 +176,10 @@ export class ConversionService {
 
       // Handle process exit
       pythonProcess.on('close', (code) => {
+        // Remove from active processes
+        activeProcesses.delete(jobId);
+        logger.info(`Removed process for job ${jobId} from active processes (exit code: ${code})`);
+
         // Prevent multiple resolve/reject calls
         if (isResolved) return;
 
@@ -288,11 +302,95 @@ export class ConversionService {
    * @returns {Promise<boolean>} Success status
    */
   static async cancelConversion(jobId) {
-    // TODO: Implement process cancellation
-    // For now, just mark as failed
-    await ConversionJobModel.markAsFailed(jobId, 'Cancelled by user');
-    logger.info(`Conversion job ${jobId} cancelled`);
-    return true;
+    logger.info(`Attempting to cancel conversion job ${jobId}`);
+
+    try {
+      // Get the active process
+      const pythonProcess = activeProcesses.get(jobId);
+
+      if (pythonProcess && !pythonProcess.killed) {
+        logger.info(`Found active process for job ${jobId} (PID: ${pythonProcess.pid}), terminating...`);
+
+        // Send SIGTERM for graceful shutdown
+        pythonProcess.kill('SIGTERM');
+
+        // Force kill after 5 seconds if still running
+        const forceKillTimeout = setTimeout(() => {
+          if (!pythonProcess.killed) {
+            logger.warn(`Force killing process for job ${jobId} after 5 second timeout`);
+            pythonProcess.kill('SIGKILL');
+          }
+        }, 5000);
+
+        // Wait for process to exit
+        await new Promise((resolve) => {
+          pythonProcess.once('close', () => {
+            clearTimeout(forceKillTimeout);
+            resolve();
+          });
+
+          // Ensure we don't wait forever
+          setTimeout(resolve, 6000);
+        });
+
+        logger.info(`Process for job ${jobId} terminated successfully`);
+      } else {
+        logger.info(`No active process found for job ${jobId}, marking as cancelled in database`);
+      }
+
+      // Mark as cancelled in database
+      await ConversionJobModel.markAsFailed(jobId, 'Cancelled by user');
+
+      // Remove from active processes if still there
+      activeProcesses.delete(jobId);
+
+      // Broadcast cancellation via WebSocket
+      try {
+        const { broadcastConversionCancelled } = await import('./websocket.service.js');
+        const job = await ConversionJobModel.findById(jobId);
+        if (job) {
+          broadcastConversionCancelled(job.user_id, jobId);
+        }
+      } catch (wsError) {
+        logger.error(`Failed to broadcast cancellation for job ${jobId}:`, wsError);
+        // Don't fail the cancellation if WebSocket broadcast fails
+      }
+
+      logger.info(`Conversion job ${jobId} cancelled successfully`);
+      return true;
+    } catch (error) {
+      logger.error(`Error cancelling conversion job ${jobId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active conversion processes
+   * @returns {Array} Array of job IDs with active processes
+   */
+  static getActiveProcesses() {
+    return Array.from(activeProcesses.keys());
+  }
+
+  /**
+   * Cancel all active conversions (for graceful shutdown)
+   * @returns {Promise<void>}
+   */
+  static async cancelAllConversions() {
+    logger.info(`Cancelling all active conversions (${activeProcesses.size} processes)`);
+
+    const cancellationPromises = [];
+
+    for (const jobId of activeProcesses.keys()) {
+      cancellationPromises.push(
+        this.cancelConversion(jobId).catch((error) => {
+          logger.error(`Failed to cancel job ${jobId} during shutdown:`, error);
+        })
+      );
+    }
+
+    await Promise.all(cancellationPromises);
+    logger.info('All active conversions cancelled');
   }
 }
 

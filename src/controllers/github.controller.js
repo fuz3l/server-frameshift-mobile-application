@@ -117,9 +117,12 @@ export const listUserRepos = asyncHandler(async (req, res) => {
  */
 export const cloneRepository = asyncHandler(async (req, res) => {
   const { userId } = req.user;
-  const { repoUrl, name, description } = req.body;
+  const { repo_url, repoUrl, name, description, github_token } = req.body;
 
-  if (!repoUrl) {
+  // Support both repo_url (frontend) and repoUrl (legacy)
+  const repositoryUrl = repo_url || repoUrl;
+
+  if (!repositoryUrl) {
     return res.status(400).json({
       success: false,
       error: {
@@ -131,23 +134,27 @@ export const cloneRepository = asyncHandler(async (req, res) => {
   // Get user's GitHub access token
   const user = await UserModel.findById(userId);
 
-  if (!user || !user.github_access_token) {
+  // Allow custom PAT or OAuth token
+  const hasAuth = user?.github_access_token || github_token;
+
+  if (!hasAuth) {
     return res.status(401).json({
       success: false,
       error: {
-        message: 'GitHub account not connected. Please authenticate with GitHub first.'
+        message: 'GitHub authentication required. Please connect your GitHub account or provide a Personal Access Token.',
+        code: 'GITHUB_AUTH_REQUIRED'
       }
     });
   }
 
-  const githubService = new GitHubService(user.github_access_token);
+  const githubService = new GitHubService(user?.github_access_token);
 
   // Create project directory
   const projectPath = await storageService.createProjectDirectory(userId);
 
   try {
-    // Clone repository
-    await githubService.cloneRepo(repoUrl, projectPath);
+    // Clone repository (use custom PAT if provided, otherwise OAuth token)
+    await githubService.cloneRepo(repositoryUrl, projectPath, github_token);
 
     // Get directory size
     const size_bytes = await storageService.getDirectorySize(projectPath);
@@ -155,15 +162,15 @@ export const cloneRepository = asyncHandler(async (req, res) => {
     // Create project record
     const project = await ProjectModel.create({
       user_id: userId,
-      name: name || path.basename(repoUrl, '.git'),
+      name: name || path.basename(repositoryUrl, '.git'),
       description,
       source_type: 'github',
-      source_url: repoUrl,
+      source_url: repositoryUrl,
       file_path: projectPath,
       size_bytes
     });
 
-    logger.info(`Repository cloned: ${repoUrl} for user ${userId}`);
+    logger.info(`Repository cloned: ${repositoryUrl} for user ${userId}${github_token ? ' (using custom PAT)' : ''}`);
 
     res.status(201).json({
       success: true,

@@ -82,16 +82,51 @@ server.listen(PORT, () => {
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+
+  try {
+    // Stop accepting new connections
+    server.close(() => {
+      logger.info('HTTP server closed');
+    });
+
+    // Cancel all active conversion processes
+    const ConversionService = (await import('./services/conversion.service.js')).default;
+    await ConversionService.cancelAllConversions();
+
+    // Stop WebSocket periodic cleanup
+    const { stopPeriodicCleanup } = await import('./services/websocket.service.js');
+    stopPeriodicCleanup();
+
+    // Close WebSocket server
+    wss.close(() => {
+      logger.info('WebSocket server closed');
+    });
+
+    logger.info('Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Handle shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  process.exit(1);
+  gracefulShutdown('uncaughtException');
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  gracefulShutdown('unhandledRejection');
 });
 
 export default app;

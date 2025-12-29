@@ -38,10 +38,27 @@ class ViewsConverter:
                 result = self._convert_file(view_file)
                 self.results['converted_files'].append(result)
                 self.results['total_views'] += result.get('views_count', 0)
+
+                # Add per-file conversion detail for frontend display
+                self.results['issues'].append({
+                    'file': str(view_file.relative_to(self.django_path)),
+                    'filename': view_file.name,
+                    'status': 'converted',
+                    'confidence': 90,  # Good confidence for views conversion
+                    'message': f'Successfully converted {result.get("views_count", 0)} view(s)',
+                    'description': 'Django views converted to Flask routes',
+                    'category': 'views'
+                })
             except Exception as e:
                 logger.error(f"Failed to convert {view_file}: {e}", exc_info=True)
                 self.results['issues'].append({
-                    'file': str(view_file),
+                    'file': str(view_file.relative_to(self.django_path)),
+                    'filename': view_file.name,
+                    'status': 'failed',
+                    'confidence': 0,
+                    'message': f'Conversion failed: {str(e)}',
+                    'description': str(e),
+                    'category': 'views',
                     'error': str(e)
                 })
 
