@@ -23,7 +23,8 @@ export class ReportModel {
       warnings = null,
       suggestions = null,
       gemini_verification = null,
-      summary = null
+      summary = null,
+      file_diffs = null
     } = reportData;
 
     const result = await query(
@@ -31,9 +32,9 @@ export class ReportModel {
         conversion_job_id, accuracy_score, total_files_converted,
         models_converted, views_converted, urls_converted, forms_converted,
         templates_converted, issues, warnings, suggestions,
-        gemini_verification, summary
+        gemini_verification, summary, file_diffs
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         conversion_job_id, accuracy_score, total_files_converted,
@@ -43,7 +44,8 @@ export class ReportModel {
         warnings ? JSON.stringify(warnings) : null,
         suggestions ? JSON.stringify(suggestions) : null,
         gemini_verification ? JSON.stringify(gemini_verification) : null,
-        summary
+        summary,
+        file_diffs ? JSON.stringify(file_diffs) : null
       ]
     );
 
@@ -62,6 +64,15 @@ export class ReportModel {
     );
 
     return result.rows[0] || null;
+  }
+
+  /**
+   * Alias for findByConversionJobId
+   * @param {string} conversionId - Conversion job ID
+   * @returns {Promise<Object|null>} Report or null
+   */
+  static async findByConversionId(conversionId) {
+    return this.findByConversionJobId(conversionId);
   }
 
   /**
@@ -91,7 +102,7 @@ export class ReportModel {
 
     Object.entries(updateData).forEach(([key, value]) => {
       // JSON fields need to be stringified
-      if (['issues', 'warnings', 'suggestions', 'gemini_verification'].includes(key) && value !== null) {
+      if (['issues', 'warnings', 'suggestions', 'gemini_verification', 'file_diffs'].includes(key) && value !== null) {
         fields.push(`${key} = $${paramIndex}`);
         values.push(JSON.stringify(value));
       } else {
@@ -110,6 +121,24 @@ export class ReportModel {
     );
 
     return result.rows[0];
+  }
+
+  /**
+   * Update report by conversion job ID
+   * @param {string} conversionJobId - Conversion job ID
+   * @param {Object} updateData - Data to update
+   * @returns {Promise<Object>} Updated report
+   */
+  static async updateByConversionId(conversionJobId, updateData) {
+    // First, find the report by conversion_job_id
+    const report = await this.findByConversionId(conversionJobId);
+
+    if (!report) {
+      throw new Error(`Report not found for conversion job ${conversionJobId}`);
+    }
+
+    // Then update using the report ID
+    return this.update(report.id, updateData);
   }
 
   /**

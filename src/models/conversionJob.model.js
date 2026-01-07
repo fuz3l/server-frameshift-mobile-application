@@ -17,14 +17,16 @@ export class ConversionJobModel {
       progress_percentage = 0,
       current_step = null,
       converted_file_path = null,
-      error_message = null
+      error_message = null,
+      use_ai = true,
+      ai_enhancements = []
     } = jobData;
 
     const result = await query(
-      `INSERT INTO conversion_jobs (project_id, user_id, status, progress_percentage, current_step, converted_file_path, error_message)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO conversion_jobs (project_id, user_id, status, progress_percentage, current_step, converted_file_path, error_message, use_ai, ai_enhancements)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [project_id, user_id, status, progress_percentage, current_step, converted_file_path, error_message]
+      [project_id, user_id, status, progress_percentage, current_step, converted_file_path, error_message, use_ai, ai_enhancements]
     );
 
     return result.rows[0];
@@ -63,20 +65,29 @@ export class ConversionJobModel {
    * Find all conversion jobs for a user
    * @param {string} userId - User ID
    * @param {Object} options - Query options
-   * @returns {Promise<Array>} List of conversion jobs
+   * @returns {Promise<Array>} List of conversion jobs with project details
    */
   static async findByUserId(userId, options = {}) {
     const { limit = 10, offset = 0, status = null } = options;
 
-    let queryText = 'SELECT * FROM conversion_jobs WHERE user_id = $1';
+    let queryText = `
+      SELECT
+        cj.*,
+        p.name as project_name,
+        p.source_type,
+        p.source_url
+      FROM conversion_jobs cj
+      LEFT JOIN projects p ON cj.project_id = p.id
+      WHERE cj.user_id = $1
+    `;
     const params = [userId];
 
     if (status) {
-      queryText += ' AND status = $2';
+      queryText += ' AND cj.status = $2';
       params.push(status);
     }
 
-    queryText += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    queryText += ' ORDER BY cj.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
     const result = await query(queryText, params);

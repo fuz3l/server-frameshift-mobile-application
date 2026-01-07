@@ -18,8 +18,12 @@ from python.converters.models_converter import ModelsConverter
 from python.converters.views_converter import ViewsConverter
 from python.converters.urls_converter import URLsConverter
 from python.converters.templates_converter import TemplatesConverter
+from python.converters.static_copier import StaticCopier
+# from python.generators.flask_structure import FlaskStructureGenerator  # DISABLED
+from python.generators.smart_flask_generator import SmartFlaskGenerator
 from python.report_generators.summary_reporter import SummaryReporter
 from python.services.gemini_verifier import GeminiVerifier
+from python.services.ai_enhancer import AIEnhancer
 from python.utils.progress_emitter import ProgressEmitter
 from python.utils.logger import logger
 
@@ -36,13 +40,18 @@ def main():
     parser.add_argument('--project-path', required=True, help='Path to Django project')
     parser.add_argument('--output-path', required=True, help='Output path for Flask project')
     parser.add_argument('--gemini-api-key', help='Google Gemini API key for verification')
+    parser.add_argument('--use-ai', default='true', help='Use AI enhancement (true/false)')
 
     args = parser.parse_args()
+
+    # Convert use_ai string to boolean
+    use_ai = args.use_ai.lower() == 'true'
 
     try:
         logger.info(f"Starting conversion for job {args.job_id}")
         logger.info(f"Django project: {args.project_path}")
         logger.info(f"Output path: {args.output_path}")
+        logger.info(f"AI Enhancement: {'Enabled' if use_ai else 'Disabled'}")
 
         # Step 0: Framework Detection (5%)
         emit_progress(args.job_id, 'detecting_framework', 5, 'Detecting project framework')
@@ -86,6 +95,56 @@ def main():
         templates_converter = TemplatesConverter(args.project_path, args.output_path)
         templates_result = templates_converter.convert()
         logger.info(f"Templates conversion complete: {templates_result.get('total_templates', 0)} templates converted")
+
+        # Step 5.3: Copy Static Files (82%)
+        emit_progress(args.job_id, 'copying_static', 82, 'Copying static files (CSS, JS, images)')
+        static_copier = StaticCopier(args.project_path, args.output_path)
+        static_result = static_copier.copy()
+        logger.info(f"Static files copy complete: {static_result.get('total_static_files', 0)} files copied")
+
+        # Step 5.5: Generate Runnable Flask App (85%)
+        emit_progress(args.job_id, 'generating_skeleton', 85, 'Generating runnable Flask application')
+
+        # Find actual project directory inside the upload directory
+        import os
+        project_path = Path(args.project_path)
+        subdirs = [d for d in os.listdir(project_path) if os.path.isdir(os.path.join(project_path, d))]
+
+        # Use the first subdirectory as project name
+        if subdirs:
+            project_name = subdirs[0]
+        else:
+            project_name = project_path.name
+
+        logger.info(f"Using project name: {project_name}")
+
+        # Generate runnable Flask project
+        flask_project_path = Path(args.output_path) / project_name
+        flask_generator = SmartFlaskGenerator(str(flask_project_path), project_name)
+        flask_result = flask_generator.generate_all()
+        logger.info(f"Generated runnable Flask app with {len(flask_result.get('files_generated', []))} files")
+
+        # Step 5.7: AI Enhancement (87%)
+        if use_ai and args.gemini_api_key:
+            emit_progress(args.job_id, 'ai_enhancement', 87, '✨ Enhancing conversion with AI')
+            logger.info("Starting AI enhancement...")
+
+            ai_enhancer = AIEnhancer(args.gemini_api_key)
+            ai_enhancements = ai_enhancer.enhance_conversion(
+                project_path=flask_project_path,
+                models_result=models_result,
+                views_result=views_result
+            )
+
+            logger.info(f"AI enhancements applied: {ai_enhancements.get('applied', [])}")
+
+            # TODO: Update job in database with ai_enhancements array
+            # This would require adding a database update call here
+        else:
+            if not use_ai:
+                logger.info("AI enhancement skipped (disabled by user)")
+            else:
+                logger.info("AI enhancement skipped (no Gemini API key)")
 
         # Step 6: AI Verification (90%)
         emit_progress(args.job_id, 'verifying', 90, 'Verifying conversion with AI')

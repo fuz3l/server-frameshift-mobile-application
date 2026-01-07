@@ -7,6 +7,7 @@ import { broadcastConversionComplete, broadcastConversionFailed } from '../servi
 import asyncHandler from '../utils/asyncHandler.js';
 import logger from '../utils/logger.js';
 import path from 'path';
+import fs from 'fs/promises';
 
 /**
  * Start new conversion
@@ -14,7 +15,7 @@ import path from 'path';
  */
 export const startConversion = asyncHandler(async (req, res) => {
   const { userId } = req.user;
-  const { projectId } = req.body;
+  const { projectId, use_ai = true } = req.body; // Extract use_ai from request
 
   if (!projectId) {
     return res.status(400).json({
@@ -47,18 +48,19 @@ export const startConversion = asyncHandler(async (req, res) => {
     });
   }
 
-  // Create conversion job
+  // Create conversion job with AI flag
   const job = await ConversionJobModel.create({
     project_id: projectId,
     user_id: userId,
     status: 'pending',
-    progress_percentage: 0
+    progress_percentage: 0,
+    use_ai: use_ai
   });
 
-  logger.info(`Conversion job created: ${job.id} for project ${projectId}`);
+  logger.info(`Conversion job created: ${job.id} for project ${projectId} (AI: ${use_ai ? 'enabled' : 'disabled'})`);
 
-  // Start conversion asynchronously
-  ConversionService.startConversion(job.id, project.file_path, userId)
+  // Start conversion asynchronously with AI flag
+  ConversionService.startConversion(job.id, project.file_path, userId, use_ai)
     .then(result => {
       // Broadcast completion
       broadcastConversionComplete(userId, job.id, result);
@@ -195,10 +197,31 @@ export const downloadConversion = asyncHandler(async (req, res) => {
   }
 
   try {
+    // Get project directory (the actual project folder inside converted_file_path)
+    // converted_file_path = storage/converted/{userId}/{jobId}
+    // We need to ZIP storage/converted/{userId}/{jobId}/{ProjectName}
+
+    // Find the project directory (first subdirectory in converted_file_path)
+    const files = await fs.readdir(job.converted_file_path);
+    const projectDirs = [];
+
+    for (const file of files) {
+      const filePath = path.join(job.converted_file_path, file);
+      const stats = await fs.stat(filePath);
+      if (stats.isDirectory()) {
+        projectDirs.push(file);
+      }
+    }
+
+    // Use the first project directory found, or fall back to entire directory
+    const projectPath = projectDirs.length > 0
+      ? path.join(job.converted_file_path, projectDirs[0])
+      : job.converted_file_path;
+
     // Create ZIP of converted project
     const zipFilename = `converted-${id}.zip`;
     const zipPath = await storageService.createZip(
-      job.converted_file_path,
+      projectPath,
       zipFilename,
       userId
     );
@@ -252,6 +275,92 @@ export const cancelConversion = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: 'Conversion cancelled successfully'
+  });
+});
+
+/**
+ * Retry failed conversion
+ * POST /api/conversions/:id/retry
+ */
+export const retryConversion = asyncHandler(async (req, res) => {
+  const { userId } = req.user;
+  const { id } = req.params;
+
+  // Verify job belongs to user
+  const job = await ConversionJobModel.findByIdAndUserId(id, userId);
+
+  if (!job) {
+    return res.status(404).json({
+      success: false,
+      error: {
+        message: 'Conversion job not found'
+      }
+    });
+  }
+
+  // Only failed conversions can be retried
+  if (job.status !== 'failed') {
+    return res.status(400).json({
+      success: false,
+      error: {
+        message: `Cannot retry ${job.status} conversion. Only failed conversions can be retried.`
+      }
+    });
+  }
+
+  // Check retry limit (max 3 retries)
+  const MAX_RETRIES = 3;
+  if (job.retry_count >= MAX_RETRIES) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        message: `Maximum retry limit (${MAX_RETRIES}) reached for this conversion.`
+      }
+    });
+  }
+
+  // Get project to verify it still exists
+  const project = await ProjectModel.findById(job.project_id);
+
+  if (!project || !project.file_path) {
+    return res.status(404).json({
+      success: false,
+      error: {
+        message: 'Original project files not found. Cannot retry conversion.'
+      }
+    });
+  }
+
+  // Update job for retry
+  const updatedJob = await ConversionJobModel.update(id, {
+    status: 'pending',
+    progress_percentage: 0,
+    current_step: null,
+    error_message: null,
+    retry_count: job.retry_count + 1,
+    last_retry_at: new Date()
+  });
+
+  logger.info(`Retrying conversion job ${id} (attempt ${updatedJob.retry_count})`);
+
+  // Start conversion asynchronously
+  ConversionService.startConversion(id, project.file_path, userId)
+    .then(result => {
+      broadcastConversionComplete(userId, id, result);
+      logger.info(`Retry conversion job ${id} completed successfully`);
+    })
+    .catch(error => {
+      broadcastConversionFailed(userId, id, error.message);
+      logger.error(`Retry conversion job ${id} failed:`, error);
+    });
+
+  // Return updated job immediately
+  res.json({
+    success: true,
+    data: {
+      job: updatedJob
+    },
+    message: `Conversion retry started (attempt ${updatedJob.retry_count}/${MAX_RETRIES})`
   });
 });
 

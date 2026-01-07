@@ -1,10 +1,12 @@
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs/promises';
 import ConversionJobModel from '../models/conversionJob.model.js';
 import ReportModel from '../models/report.model.js';
 import UserModel from '../models/user.model.js';
 import storageService from './storage.service.js';
 import emailService from './email.service.js';
+import DiffService from './diff.service.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -25,8 +27,8 @@ export class ConversionService {
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Conversion result
    */
-  static async startConversion(jobId, projectPath, userId) {
-    logger.info(`Starting conversion job ${jobId}`);
+  static async startConversion(jobId, projectPath, userId, useAI = true) {
+    logger.info(`Starting conversion job ${jobId} (AI: ${useAI ? 'enabled' : 'disabled'})`);
 
     try {
       // Create output directory
@@ -35,14 +37,22 @@ export class ConversionService {
       // Mark job as started
       await ConversionJobModel.markAsStarted(jobId);
 
-      // Spawn Python process
-      const result = await this.runPythonConversion(jobId, projectPath, outputPath);
+      // Spawn Python process with AI flag
+      const result = await this.runPythonConversion(jobId, projectPath, outputPath, useAI);
 
       // Mark job as completed
       await ConversionJobModel.markAsCompleted(jobId, outputPath);
 
       // Save report to database
       await this.saveReport(jobId, result.report);
+
+      // Generate diffs for code preview
+      try {
+        await this.generateDiffs(jobId, projectPath, outputPath, result.report);
+      } catch (diffError) {
+        logger.error(`Failed to generate diffs for job ${jobId}:`, diffError);
+        // Don't fail the conversion if diff generation fails
+      }
 
       // Send success email
       try {
@@ -106,9 +116,10 @@ export class ConversionService {
    * @param {string} jobId - Conversion job ID
    * @param {string} projectPath - Input Django project path
    * @param {string} outputPath - Output Flask project path
+   * @param {boolean} useAI - Whether to use AI enhancement
    * @returns {Promise<Object>} Conversion result from Python
    */
-  static runPythonConversion(jobId, projectPath, outputPath) {
+  static runPythonConversion(jobId, projectPath, outputPath, useAI = true) {
     return new Promise((resolve, reject) => {
       const pythonPath = this.detectPython();
       const scriptPath = path.join(process.cwd(), 'python', 'main.py');
@@ -117,7 +128,8 @@ export class ConversionService {
         scriptPath,
         '--job-id', jobId,
         '--project-path', projectPath,
-        '--output-path', outputPath
+        '--output-path', outputPath,
+        '--use-ai', useAI.toString() // Pass AI flag to Python
       ];
 
       // Add Gemini API key if available
@@ -269,6 +281,123 @@ export class ConversionService {
       return savedReport;
     } catch (error) {
       logger.error(`Failed to save report for job ${jobId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate diffs for converted files
+   * @param {string} jobId - Conversion job ID
+   * @param {string} projectPath - Path to original Django project
+   * @param {string} outputPath - Path to converted Flask project
+   * @param {Object} report - Conversion report
+   * @returns {Promise<void>}
+   */
+  static async generateDiffs(jobId, projectPath, outputPath, report) {
+    try {
+      logger.info(`Generating diffs for job ${jobId}`);
+
+      const fileDiffs = [];
+
+      // Find actual project directory inside the upload directory
+      // The upload path may contain a single project directory (e.g., "Job Portal")
+      let projectName;
+      try {
+        const entries = await fs.readdir(projectPath, { withFileTypes: true });
+        const subdirs = entries.filter(entry => entry.isDirectory()).map(entry => entry.name);
+
+        // Use the first subdirectory as project name, or fall back to the directory name
+        projectName = subdirs.length > 0 ? subdirs[0] : path.basename(projectPath);
+        logger.info(`Using project name for diffs: ${projectName}`);
+      } catch (err) {
+        logger.warn(`Error reading project directory ${projectPath}, using basename:`, err.message);
+        projectName = path.basename(projectPath);
+      }
+
+      const convertedProjectPath = path.join(outputPath, projectName);
+
+      // Recursively find all Python files in converted directory
+      const findPythonFiles = async (dir, baseDir) => {
+        const files = [];
+        try {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+
+            if (entry.isDirectory()) {
+              // Skip common directories
+              if (!['venv', 'node_modules', '__pycache__', '.git', 'migrations', 'instance', 'logs'].includes(entry.name)) {
+                const subFiles = await findPythonFiles(fullPath, baseDir);
+                files.push(...subFiles);
+              }
+            } else if (entry.isFile() && entry.name.endsWith('.py')) {
+              const relativePath = path.relative(baseDir, fullPath);
+              files.push(relativePath);
+            }
+          }
+        } catch (err) {
+          logger.warn(`Error reading directory ${dir}:`, err.message);
+        }
+
+        return files;
+      };
+
+      // Find all Python files in the converted project
+      const convertedFiles = await findPythonFiles(convertedProjectPath, convertedProjectPath);
+
+      logger.info(`Found ${convertedFiles.length} Python files in converted project`);
+
+      // Original project path includes the project directory
+      const originalProjectPath = path.join(projectPath, projectName);
+
+      // Generate diff for each file
+      for (const relativeFilePath of convertedFiles) {
+        try {
+          const convertedFile = path.join(convertedProjectPath, relativeFilePath);
+          const originalFile = path.join(originalProjectPath, relativeFilePath);
+
+          // Check if original file exists
+          const originalExists = await fs.access(originalFile).then(() => true).catch(() => false);
+
+          if (!originalExists) {
+            logger.debug(`Skipping diff for ${relativeFilePath}: original file not found (new file)`);
+            continue;
+          }
+
+          // Determine category from file path
+          const category = relativeFilePath.includes('models') ? 'models' :
+                          relativeFilePath.includes('views') ? 'views' :
+                          relativeFilePath.includes('urls') || relativeFilePath.includes('routes') ? 'urls' :
+                          relativeFilePath.includes('forms') ? 'forms' :
+                          'other';
+
+          // Generate diff
+          const diffData = await DiffService.generateFileDiff(originalFile, convertedFile, {
+            originalPath: relativeFilePath,
+            convertedPath: relativeFilePath,
+            category: category,
+            confidence: null
+          });
+
+          // Add unique ID
+          diffData.id = `${jobId}-${Buffer.from(relativeFilePath).toString('base64').replace(/=/g, '')}`;
+
+          fileDiffs.push(diffData);
+          logger.debug(`Generated diff for ${relativeFilePath}`);
+        } catch (fileError) {
+          logger.warn(`Failed to generate diff for ${relativeFilePath}:`, fileError.message);
+        }
+      }
+
+      // Update report with file_diffs
+      await ReportModel.updateByConversionId(jobId, {
+        file_diffs: fileDiffs
+      });
+
+      logger.info(`Generated ${fileDiffs.length} file diffs for job ${jobId}`);
+    } catch (error) {
+      logger.error(`Error generating diffs for job ${jobId}:`, error);
       throw error;
     }
   }

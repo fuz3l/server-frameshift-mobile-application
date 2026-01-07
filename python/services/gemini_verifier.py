@@ -35,8 +35,8 @@ class GeminiVerifier:
         if self.enabled:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
-                logger.info("Gemini AI verification enabled")
+                self.model = genai.GenerativeModel('gemini-2.5-flash')
+                logger.info("Gemini AI verification enabled with Gemini 2.5 Flash")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
                 self.enabled = False

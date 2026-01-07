@@ -71,9 +71,19 @@ class TemplatesConverter:
         source_code = FileHandler.read_file(str(file_path))
         converted_code = self._convert_template_code(source_code)
 
-        # Calculate output path - keep same structure
+        # Calculate output path - preserve directory structure
+        # Templates go into templates/ directory, maintaining app structure
         relative_path = file_path.relative_to(self.django_path)
-        output_file = self.output_path / 'templates' / relative_path.name
+
+        # Try to preserve the app/templates structure if it exists
+        parts = relative_path.parts
+        if 'templates' in parts:
+            # Find templates directory and keep everything after it
+            templates_idx = parts.index('templates')
+            output_file = self.output_path / Path(*parts[templates_idx:])
+        else:
+            # No templates directory in path, just put in templates/
+            output_file = self.output_path / 'templates' / relative_path.name
 
         # Write converted code
         FileHandler.write_file(str(output_file), converted_code)

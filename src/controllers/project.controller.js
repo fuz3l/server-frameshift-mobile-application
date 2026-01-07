@@ -12,6 +12,7 @@ import logger from '../utils/logger.js';
 export const uploadProject = asyncHandler(async (req, res) => {
   const { userId } = req.user;
   const file = req.file;
+  const { name } = req.body;
 
   if (!file) {
     return res.status(400).json({
@@ -49,7 +50,7 @@ export const uploadProject = asyncHandler(async (req, res) => {
     // Create project record
     const project = await ProjectModel.create({
       user_id: userId,
-      name: path.parse(file.originalname).name,
+      name: name || path.parse(file.originalname).name,
       source_type: 'upload',
       file_path: projectPath,
       size_bytes
