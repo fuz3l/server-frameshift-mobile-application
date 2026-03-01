@@ -3,6 +3,13 @@ import { query } from '../config/database.js';
 /**
  * User model for database operations
  */
+// Whitelist of columns that can be updated
+const VALID_UPDATE_COLUMNS = [
+  'email', 'password_hash', 'full_name', 'github_id', 'github_username',
+  'github_access_token', 'avatar_url', 'email_verified', 'auth_provider',
+  'role', 'last_login'
+];
+
 export class UserModel {
   /**
    * Create a new user
@@ -43,7 +50,7 @@ export class UserModel {
    */
   static async findById(id) {
     const result = await query(
-      'SELECT id, email, full_name, github_id, github_username, github_access_token, avatar_url, email_verified, auth_provider, created_at, updated_at, last_login FROM users WHERE id = $1',
+      'SELECT id, email, full_name, role, github_id, github_username, github_access_token, avatar_url, email_verified, auth_provider, created_at, updated_at, last_login FROM users WHERE id = $1',
       [id]
     );
 
@@ -76,6 +83,9 @@ export class UserModel {
     let paramIndex = 1;
 
     Object.entries(updateData).forEach(([key, value]) => {
+      if (!VALID_UPDATE_COLUMNS.includes(key)) {
+        throw new Error(`Invalid update column: ${key}`);
+      }
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);
       paramIndex++;

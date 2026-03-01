@@ -203,11 +203,9 @@ export const updateProject = asyncHandler(async (req, res) => {
 export const deleteProject = asyncHandler(async (req, res) => {
   const { userId } = req.user;
   const { id } = req.params;
-  console.log(id);
-  console.log(userId);
+
   // Check if project exists and belongs to user
   const project = await ProjectModel.findByIdAndUserId(id, userId);
-  console.log(project);
   if (!project) {
     return res.status(404).json({
       success: false,

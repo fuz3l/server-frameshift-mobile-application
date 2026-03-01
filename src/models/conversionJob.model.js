@@ -3,6 +3,13 @@ import { query } from '../config/database.js';
 /**
  * ConversionJob model for database operations
  */
+// Whitelist of columns that can be updated
+const VALID_UPDATE_COLUMNS = [
+  'status', 'progress_percentage', 'current_step', 'converted_file_path',
+  'error_message', 'started_at', 'completed_at', 'use_ai', 'ai_enhancements',
+  'retry_count', 'last_retry_at', 'updated_at'
+];
+
 export class ConversionJobModel {
   /**
    * Create a new conversion job
@@ -106,6 +113,9 @@ export class ConversionJobModel {
     let paramIndex = 1;
 
     Object.entries(updateData).forEach(([key, value]) => {
+      if (!VALID_UPDATE_COLUMNS.includes(key)) {
+        throw new Error(`Invalid update column: ${key}`);
+      }
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);
       paramIndex++;

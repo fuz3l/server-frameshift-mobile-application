@@ -3,6 +3,14 @@ import { query } from '../config/database.js';
 /**
  * Report model for database operations
  */
+// Whitelist of columns that can be updated
+const VALID_UPDATE_COLUMNS = [
+  'accuracy_score', 'total_files_converted', 'models_converted',
+  'views_converted', 'urls_converted', 'forms_converted',
+  'templates_converted', 'issues', 'warnings', 'suggestions',
+  'gemini_verification', 'summary', 'file_diffs'
+];
+
 export class ReportModel {
   /**
    * Create a new report
@@ -101,6 +109,9 @@ export class ReportModel {
     let paramIndex = 1;
 
     Object.entries(updateData).forEach(([key, value]) => {
+      if (!VALID_UPDATE_COLUMNS.includes(key)) {
+        throw new Error(`Invalid update column: ${key}`);
+      }
       // JSON fields need to be stringified
       if (['issues', 'warnings', 'suggestions', 'gemini_verification', 'file_diffs'].includes(key) && value !== null) {
         fields.push(`${key} = $${paramIndex}`);

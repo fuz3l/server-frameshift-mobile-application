@@ -6,8 +6,12 @@ import emailService from './email.service.js';
 import logger from '../utils/logger.js';
 
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required. Set it in your .env file.');
+}
 
 /**
  * Authentication service

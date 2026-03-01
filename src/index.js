@@ -51,6 +51,7 @@ import userRoutes from './routes/user.routes.js';
 import projectRoutes from './routes/project.routes.js';
 import githubRoutes from './routes/github.routes.js';
 import conversionRoutes from './routes/conversion.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 // API routes
 app.use('/api/auth', authRoutes);
@@ -58,6 +59,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/conversions', conversionRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Setup WebSocket server
 setupWebSocket(wss);

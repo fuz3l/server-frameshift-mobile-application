@@ -3,6 +3,12 @@ import { query } from "../config/database.js";
 /**
  * Project model for database operations
  */
+// Whitelist of columns that can be updated
+const VALID_UPDATE_COLUMNS = [
+  'name', 'description', 'source_type', 'source_url', 'file_path',
+  'size_bytes', 'django_version', 'structure_detected'
+];
+
 export class ProjectModel {
   /**
    * Create a new project
@@ -99,6 +105,9 @@ export class ProjectModel {
     let paramIndex = 1;
 
     Object.entries(updateData).forEach(([key, value]) => {
+      if (!VALID_UPDATE_COLUMNS.includes(key)) {
+        throw new Error(`Invalid update column: ${key}`);
+      }
       fields.push(`${key} = $${paramIndex}`);
       values.push(value);
       paramIndex++;
