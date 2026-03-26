@@ -1,0 +1,31 @@
+<!-- Converted from Django template to Jinja2 (Flask) -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Update Student</title>
+</head>
+<body>
+
+<h2>Update Student</h2>
+
+<form method="POST">
+{{ csrf_token() }}
+
+<label>Name</label><br>
+<input type="text" name="name" value="{{ student.name }}"><br><br>
+
+<label>Email</label><br>
+<input type="email" name="email" value="{{ student.email }}"><br><br>
+
+<label>Age</label><br>
+<input type="number" name="age" value="{{ student.age }}"><br><br>
+
+<label>Joining Date</label><br>
+<input type="date" name="joining_date" value="{{ student.joining_date }}"><br><br>
+
+<button type="submit">Update Student</button>
+
+</form>
+
+</body>
+</html>

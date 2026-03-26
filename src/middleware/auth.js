@@ -34,7 +34,7 @@ export const authenticateToken = async (req, res, next) => {
     next();
   } catch (error) {
     logger.error('JWT authentication failed:', error);
-    return res.status(403).json({
+    return res.status(401).json({
       success: false,
       error: {
         message: 'Invalid or expired token',

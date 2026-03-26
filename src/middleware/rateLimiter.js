@@ -38,12 +38,17 @@ export const uploadLimiter = rateLimit({
 
 /**
  * General API rate limiter
- * Max 100 requests per 15 minutes
+ * Max 500 requests per 15 minutes (skipped for authenticated users)
  */
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 500,
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for authenticated requests
+    const auth = req.headers['authorization'];
+    return !!(auth && auth.startsWith('Bearer '));
+  },
 });

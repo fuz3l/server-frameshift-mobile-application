@@ -12,8 +12,10 @@ import path from 'path';
  */
 export const initiateGithubAuth = asyncHandler(async (req, res) => {
   const githubConfig = (await import('../config/github.js')).default;
+  const { redirectUri } = req.query;
 
-  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}`;
+  const state = redirectUri ? Buffer.from(JSON.stringify({ redirectUri })).toString('base64') : '';
+  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}` + (state ? `&state=${state}` : '');
 
   res.json({
     success: true,
@@ -28,7 +30,7 @@ export const initiateGithubAuth = asyncHandler(async (req, res) => {
  * GET /api/auth/github/callback
  */
 export const githubCallback = asyncHandler(async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
 
   if (!code) {
     return res.status(400).json({
@@ -58,6 +60,17 @@ export const githubCallback = asyncHandler(async (req, res) => {
       avatar_url: profile.avatar_url,
       accessToken
     });
+
+    if (state) {
+      try {
+        const decodedState = JSON.parse(Buffer.from(state, 'base64').toString('ascii'));
+        if (decodedState.redirectUri) {
+          return res.redirect(`${decodedState.redirectUri}?token=${result.token}`);
+        }
+      } catch (e) {
+        logger.error('Failed to parse state:', e);
+      }
+    }
 
     // Redirect to frontend with token
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
@@ -91,24 +104,38 @@ export const listUserRepos = asyncHandler(async (req, res) => {
   }
 
   const githubService = new GitHubService(user.github_access_token);
-  const repos = await githubService.listUserRepos({ page, perPage });
+  
+  try {
+    const repos = await githubService.listUserRepos({ page, perPage });
 
-  res.json({
-    success: true,
-    data: {
-      repos: repos.map(repo => ({
-        id: repo.id,
-        name: repo.name,
-        full_name: repo.full_name,
-        description: repo.description,
-        url: repo.html_url,
-        clone_url: repo.clone_url,
-        private: repo.private,
-        language: repo.language,
-        updated_at: repo.updated_at
-      }))
+    res.json({
+      success: true,
+      data: {
+        repos: repos.map(repo => ({
+          id: repo.id,
+          name: repo.name,
+          full_name: repo.full_name,
+          description: repo.description,
+          url: repo.html_url,
+          clone_url: repo.clone_url,
+          private: repo.private,
+          language: repo.language,
+          updated_at: repo.updated_at
+        }))
+      }
+    });
+  } catch (error) {
+    if (error.message === 'GITHUB_AUTH_REQUIRED' || (error.response && error.response.status === 401)) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          message: 'GitHub token is invalid or expired. Please reconnect your GitHub account.',
+          code: 'GITHUB_AUTH_EXPIRED'
+        }
+      });
     }
-  });
+    throw error;
+  }
 });
 
 /**

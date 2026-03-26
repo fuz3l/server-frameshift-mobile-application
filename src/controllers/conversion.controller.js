@@ -30,11 +30,14 @@ const toPositiveInt = (value, fallback, max = 100) => {
 export const startConversion = asyncHandler(async (req, res) => {
   const { userId } = req.user;
   const {
-    projectId,
+    projectId: reqProjectId,
+    project_id,
     use_ai = true,
     conversion_mode: rawConversionMode,
     custom_api_config: rawCustomApiConfig
   } = req.body;
+
+  const projectId = reqProjectId || project_id;
 
   if (!projectId) {
     return res.status(400).json({

@@ -1,0 +1,42 @@
+<!-- Flask uses url_for("static", filename="...") -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home page</title>
+</head>
+<body>
+
+   <img src="{{ url_for('static', filename='images/fck.gif') }}" width="200" alt="">
+
+   <hr>
+
+    <form method="POST">
+       {%csrf_token%}
+       Enter Roll Number:
+       <input type="text" name="roll" required>
+       <button type="submit">Search result</button>
+    </form>
+
+    {% if result %}
+    <h2>result for Roll No.: {{ roll }}</h2>
+    <table border="1">
+ <tr>
+    <th>name</th>
+    <th>Math</th>
+    <th>Science</th>
+    <th>English</th>
+ </tr>
+ <tr>
+    <td>{{result.name}}</td>
+    <td>{{result.math}}</td>
+    <td>{{result.science}}</td>
+    <td>{{result.english}}</td>
+ </tr>
+    </table>
+    {% elif roll %}
+    <p style="color: red;">Oops! Roll number not found</p>
+    {% endif %}
+</body>
+</html>

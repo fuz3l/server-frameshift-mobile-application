@@ -34,7 +34,7 @@ def emit_progress(job_id, step, progress, message):
 
 def normalize_conversion_mode(raw_mode):
     mode = (raw_mode or 'default').strip().lower()
-    return mode if mode in ['default', 'custom'] else 'default'
+    return mode if mode in ['default', 'custom', 'codet5'] else 'default'
 
 
 def resolve_ai_provider_config(args, conversion_mode):
@@ -44,6 +44,14 @@ def resolve_ai_provider_config(args, conversion_mode):
             'api_key': os.getenv('CUSTOM_API_KEY'),
             'endpoint': os.getenv('CUSTOM_API_ENDPOINT') or None,
             'model': os.getenv('CUSTOM_API_MODEL') or None
+        }
+
+    if conversion_mode == 'codet5':
+        return {
+            'provider': 'codet5',
+            'api_key': 'local',
+            'endpoint': None,
+            'model': 'Salesforce/codet5-small'
         }
 
     return {

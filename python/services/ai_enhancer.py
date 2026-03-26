@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List
 from ..utils.logger import logger
 from ..providers import OpenAIProvider, GeminiProvider, ClaudeProvider, CustomProvider
+from ..providers.codet5_provider import CodeT5Provider
 
 
 class AIEnhancer:
@@ -75,6 +76,14 @@ class AIEnhancer:
                 api_key=self.api_key,
                 model=self.model_name or 'default-model',
                 endpoint=self.endpoint or ''
+            )
+
+        if self.provider_name == 'codet5':
+            if CodeT5Provider is None:
+                raise RuntimeError('CodeT5 provider is unavailable in this runtime')
+            return CodeT5Provider(
+                api_key='local',
+                model=self.model_name or 'Salesforce/codet5-small'
             )
 
         raise ValueError(f"Unsupported AI provider: {self.provider_name}")
@@ -199,6 +208,12 @@ IMPORTANT: Return ONLY the fixed Python code. No explanations, no markdown code 
         """
         logger.info("AI Enhancement: Implementing route logic...")
 
+        # Load target database models to give Gemini explicit context of the SQL schema
+        models_content = ""
+        base_models_file = project_path / 'models.py'
+        if base_models_file.exists():
+            models_content = base_models_file.read_text(encoding='utf-8')
+
         # Find all routes.py files
         for routes_file in project_path.rglob('routes.py'):
             try:
@@ -216,10 +231,11 @@ IMPORTANT: Return ONLY the fixed Python code. No explanations, no markdown code 
                 if views_file.exists():
                     views_content = views_file.read_text(encoding='utf-8')
 
-                # Use Gemini to implement routes
+                # Use Gemini to implement routes using the models file as a guide
                 implemented_content = self._implement_routes_with_ai(
                     content,
                     views_content,
+                    models_content,
                     routes_file.name
                 )
 
@@ -237,8 +253,8 @@ IMPORTANT: Return ONLY the fixed Python code. No explanations, no markdown code 
             except Exception as e:
                 logger.error(f"Error implementing routes in {routes_file}: {e}")
 
-    def _implement_routes_with_ai(self, routes_content: str, views_content: str, filename: str) -> str:
-        """Use Gemini to implement route logic"""
+    def _implement_routes_with_ai(self, routes_content: str, views_content: str, models_content: str, filename: str) -> str:
+        """Use Gemini to implement route logic using exact schema references"""
 
         views_context = ""
         if views_content:
@@ -246,6 +262,15 @@ IMPORTANT: Return ONLY the fixed Python code. No explanations, no markdown code 
 ORIGINAL DJANGO VIEWS (for reference):
 ```python
 {views_content}
+```
+"""
+
+        models_context = ""
+        if models_content:
+            models_context = f"""
+CONVERTED FLASK MODELS (SUPER IMPORTANT - Use these exact SQLAlchemy classes and fields for your queries):
+```python
+{models_content}
 ```
 """
 
@@ -258,6 +283,7 @@ CURRENT ROUTES (EMPTY):
 {routes_content}
 ```
 
+{models_context}
 {views_context}
 
 REQUIREMENTS:

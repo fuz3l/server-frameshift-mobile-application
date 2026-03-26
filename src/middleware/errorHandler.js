@@ -8,6 +8,10 @@ import logger from '../utils/logger.js';
  * @param {Function} next - Express next function
  */
 export const errorHandler = (err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
   // Log error
   logger.error(err.message, { error: err, stack: err.stack });
 

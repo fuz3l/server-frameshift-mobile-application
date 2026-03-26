@@ -13,6 +13,14 @@ import { setupWebSocket } from './websocket/wsServer.js';
 // Load environment variables
 dotenv.config();
 
+// Verify essential environment variables
+const requiredEnvVars = ['JWT_SECRET', 'DATABASE_URL'];
+const missingVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingVars.length > 0) {
+  logger.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
 // Create Express app and HTTP server
 const app = express();
 const server = createServer(app);
@@ -50,10 +58,7 @@ app.use(securityHeaders);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
-app.use(generalLimiter);
-
-// Health check endpoint
+// Health check endpoint (BEFORE rate limiting so it's never blocked)
 app.get('/health', (req, res) => {
   res.json({
     success: true,
@@ -61,6 +66,9 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Rate limiting (skip /health)
+app.use(generalLimiter);
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
@@ -95,7 +103,7 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   logger.info(`🚀 FrameShift server is running on port ${PORT}`);
   logger.info(`📡 WebSocket server is running on ws://localhost:${PORT}/ws`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -119,6 +127,13 @@ server.listen(PORT, () => {
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
+  // Force exit after 10 seconds to prevent hanging indefinitely
+  const forceExit = setTimeout(() => {
+    logger.error('Graceful shutdown timed out after 10s, forcing exit');
+    process.exit(1);
+  }, 10000);
+  forceExit.unref();
+
   try {
     // Stop accepting new connections
     server.close(() => {
@@ -138,6 +153,7 @@ const gracefulShutdown = async (signal) => {
       logger.info('WebSocket server closed');
     });
 
+    clearTimeout(forceExit);
     logger.info('Graceful shutdown completed');
     process.exit(0);
   } catch (error) {
