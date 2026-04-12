@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon",
+    "build": "node database/migrate.js",
     "migrate": "node database/migrate.js",
     "test": "jest"
   },

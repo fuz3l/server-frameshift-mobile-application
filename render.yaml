@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: frameshift-server
+    runtime: node
+    plan: starter
+    buildCommand: npm install && pip install -r python/requirements.txt
+    startCommand: node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: frameshift-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: PYTHON_PATH
+        value: python3
+
+databases:
+  - name: frameshift-db
+    databaseName: frameshift
+    plan: starter

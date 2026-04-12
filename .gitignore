@@ -38,7 +38,13 @@ node_modules/
 temp/
 tmp/
 storage/projects/*
+storage/uploads/*
+storage/converted/*
+storage/reports/*
 !storage/projects/.gitkeep
+!storage/uploads/.gitkeep
+!storage/converted/.gitkeep
+!storage/reports/.gitkeep
 
 # Mac OS folder attributes
 .DS_Store
