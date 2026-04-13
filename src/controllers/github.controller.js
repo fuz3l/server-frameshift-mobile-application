@@ -15,7 +15,7 @@ export const initiateGithubAuth = asyncHandler(async (req, res) => {
   const { redirectUri } = req.query;
 
   const state = redirectUri ? Buffer.from(JSON.stringify({ redirectUri })).toString('base64') : '';
-  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}` + (state ? `&state=${state}` : '');
+  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}` + (state ? `&state=${encodeURIComponent(state)}` : '');
 
   res.json({
     success: true,
