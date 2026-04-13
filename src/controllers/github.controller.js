@@ -63,8 +63,12 @@ export const githubCallback = asyncHandler(async (req, res) => {
 
     if (state) {
       try {
-        const decodedState = JSON.parse(Buffer.from(state, 'base64').toString('ascii'));
+        // Express decodes '+' into spaces in query params, so we must replace them back for valid base64
+        const safeState = state.replace(/ /g, '+');
+        const decodedState = JSON.parse(Buffer.from(safeState, 'base64').toString('utf8'));
         if (decodedState.redirectUri) {
+          // If a redirect URI was provided (like from the mobile app), redirect explicitly back to it
+          // Wait to ensure frontend has completely initialized processing
           return res.redirect(`${decodedState.redirectUri}?token=${result.token}`);
         }
       } catch (e) {
