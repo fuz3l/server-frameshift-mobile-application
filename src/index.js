@@ -103,10 +103,24 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start server
-server.listen(PORT, '0.0.0.0', () => {
-  logger.info(`🚀 FrameShift server is running on port ${PORT}`);
-  logger.info(`📡 WebSocket server is running on ws://localhost:${PORT}/ws`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+import { exec } from 'child_process';
+import util from 'util';
+const execPromise = util.promisify(exec);
+
+async function startServer() {
+  try {
+    logger.info('Running database migrations checking for missing tables...');
+    const { stdout, stderr } = await execPromise('node database/migrate.js');
+    logger.info(`Migration output: ${stdout.trim()}`);
+    if (stderr) logger.warn(`Migration stderr: ${stderr.trim()}`);
+  } catch (error) {
+    logger.error('Failed to execute automatic migrations:', error);
+  }
+
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info(`🚀 FrameShift server is running on port ${PORT}`);
+    logger.info(`📡 WebSocket server is running on ws://localhost:${PORT}/ws`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
   // Recover from interrupted conversions after server restart.
   import('./models/conversionJob.model.js')
@@ -121,7 +135,11 @@ server.listen(PORT, '0.0.0.0', () => {
     .catch((error) => {
       logger.error('Failed to recover orphaned conversion jobs:', error);
     });
-});
+  });
+}
+
+// Start the server initialization
+startServer();
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal) => {
