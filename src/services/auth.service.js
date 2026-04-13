@@ -168,17 +168,33 @@ export class AuthService {
       });
       await UserModel.updateLastLogin(user.id);
     } else {
-      // Create new user with GitHub auth provider
-      user = await UserModel.create({
-        email: email || `${github_username}@github.com`,
-        full_name: name || github_username,
-        github_id,
-        github_username,
-        github_access_token: accessToken,
-        avatar_url,
-        email_verified: true, // GitHub emails are verified
-        auth_provider: 'github'
-      });
+      // Check if user already exists by email instead
+      const emailToUse = email || `${github_username}@github.com`;
+      const existingEmailUser = await UserModel.findByEmail(emailToUse);
+
+      if (existingEmailUser) {
+        // Link GitHub to existing email account
+        user = await UserModel.update(existingEmailUser.id, {
+          github_id,
+          github_username,
+          github_access_token: accessToken,
+          avatar_url,
+          email_verified: true, // Auto-verify
+        });
+        await UserModel.updateLastLogin(user.id);
+      } else {
+        // Entirely new user
+        user = await UserModel.create({
+          email: emailToUse,
+          full_name: name || github_username,
+          github_id,
+          github_username,
+          github_access_token: accessToken,
+          avatar_url,
+          email_verified: true,
+          auth_provider: 'github'
+        });
+      }
     }
 
     // Generate token
