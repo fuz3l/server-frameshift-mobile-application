@@ -14,8 +14,9 @@ export const initiateGithubAuth = asyncHandler(async (req, res) => {
   const githubConfig = (await import('../config/github.js')).default;
   const { redirectUri } = req.query;
 
-  const state = redirectUri ? Buffer.from(JSON.stringify({ redirectUri })).toString('base64') : '';
-  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}` + (state ? `&state=${encodeURIComponent(state)}` : '');
+  // Just pass the redirectUri completely raw (encoded) instead of wrapping it in complex Base64 JSON
+  const state = redirectUri ? encodeURIComponent(redirectUri) : '';
+  const authUrl = `${githubConfig.authorizationURL}?client_id=${githubConfig.clientId}&scope=${githubConfig.scope.join(' ')}&redirect_uri=${encodeURIComponent(githubConfig.callbackURL)}` + (state ? `&state=${state}` : '');
 
   res.json({
     success: true,
@@ -63,13 +64,9 @@ export const githubCallback = asyncHandler(async (req, res) => {
 
     if (state) {
       try {
-        // Express decodes '+' into spaces in query params, so we must replace them back for valid base64
-        const safeState = state.replace(/ /g, '+');
-        const decodedState = JSON.parse(Buffer.from(safeState, 'base64').toString('utf8'));
-        if (decodedState.redirectUri) {
-          // If a redirect URI was provided (like from the mobile app), redirect explicitly back to it
-          // Wait to ensure frontend has completely initialized processing
-          return res.redirect(`${decodedState.redirectUri}?token=${result.token}`);
+        const redirectUri = state; // We injected it explicitly without Base64 now
+        if (redirectUri && redirectUri.includes('://')) {
+          return res.redirect(`${redirectUri}?token=${result.token}`);
         }
       } catch (e) {
         logger.error('Failed to parse state:', e);
